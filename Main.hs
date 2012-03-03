@@ -6,7 +6,7 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Exception (bracket_, finally)
-import Control.Monad (forM_)
+import Control.Monad (forM_, forever, join)
 import Data.Int (Int64)
 import Data.Map (Map)
 import Network
@@ -69,7 +69,7 @@ sendMessage Client{..} msg =
     writeTChan clientSendChan msg
 
 kickClient :: Client -> String -> STM ()
-kickClient client@Client{..} reason =
+kickClient Client{..} reason =
     writeTVar clientKicked $ Just reason
 
 serve :: Server -> ClientId -> Handle -> IO ()
@@ -130,7 +130,34 @@ serveLoop :: Server -> Client -> IO ()
 serveLoop server@Server{..}
           client@Client{..} = do
     done <- newEmptyMVar
-    undefined
+    let spawnWorker io = forkIO (io `finally` tryPutMVar done ())
+
+    recv_tid <- spawnWorker $ forever $ do
+        msg <- hGetLine clientHandle
+        atomically $ broadcast server $ MessageFrom clientName msg
+
+    send_tid <- spawnWorker $
+        let loop = join $ atomically $ do
+                k <- readTVar clientKicked
+                case k of
+                    Just reason -> return $
+                        hPutStrLn clientHandle $ "You have been kicked: " ++ reason
+                    Nothing -> do
+                        msg <- readTChan clientSendChan
+                        return $ do
+                            handleMessage client msg
+                            loop
+         in loop
+
+    takeMVar done
+    mapM_ killThread [recv_tid, send_tid]
+
+handleMessage :: Client -> Message -> IO ()
+handleMessage Client{..} message =
+    hPutStrLn clientHandle $
+        case message of
+            Notice msg           -> "* " ++ msg
+            MessageFrom name msg -> "<" ++ name ++ ">: " ++ msg
 
 main :: IO ()
 main = do
