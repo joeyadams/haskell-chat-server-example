@@ -16,6 +16,7 @@ description:
     * Any lines the client sends are broadcast to all other clients.
     .
     * Connect and disconnect notices are broadcast as well.
+homepage:            https://github.com/joeyadams/haskell-chat-server-example
 license:             BSD3
 license-file:        LICENSE
 author:              Joey Adams
@@ -24,6 +25,10 @@ copyright:           Copyright (c) Joseph Adams 2012
 category:            Concurrency
 build-type:          Simple
 cabal-version:       >=1.8
+
+source-repository head
+    type:       git
+    location:   git://github.com/joeyadams/haskell-chat-server-example.git
 
 executable chat-server-example
     main-is: Main.hs
