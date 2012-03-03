@@ -15,6 +15,8 @@ import System.IO
 import qualified Data.Foldable  as F
 import qualified Data.Map       as Map
 
+-- STM 2.3 introduced this function.  However, it was released less than a week
+-- ago, so most people probably don't have it yet.
 #if !MIN_VERSION_stm(2,3,0)
 modifyTVar' :: TVar a -> (a -> a) -> STM ()
 modifyTVar' var f = do
@@ -49,8 +51,7 @@ data Client
         }
 
 instance Eq Client where
-    Client{clientId = a} == Client{clientId = b}
-        = a == b
+    a == b = clientId a == clientId b
 
 initClient :: ClientId -> ClientName -> Handle -> IO Client
 initClient id name handle =
@@ -113,17 +114,13 @@ deleteClient server@Server{..}
     modifyTVar' serverClients $ Map.delete clientId
     m <- readTVar serverClientsByName
     case Map.lookup clientName m of
-        Nothing ->
-            -- I got kicked already.  Do nothing.
+        -- Make sure the client in the map is actually me, and not another
+        -- client who took my name.
+        Just c | c == client -> do
+            broadcast server $ Notice $ clientName ++ " has disconnected"
+            writeTVar serverClientsByName $! Map.delete clientName m
+        _ ->
             return ()
-        Just c ->
-            -- Make sure the client in the map is actually me,
-            -- and not another client who took my name.
-            if c == client
-                then do
-                    broadcast server $ Notice $ clientName ++ " has disconnected"
-                    writeTVar serverClientsByName $! Map.delete clientName m
-                else return ()
 
 -- | Handle client I/O.
 serveLoop :: Server -> Client -> IO ()
