@@ -5,7 +5,7 @@ import Prelude hiding (id)
 import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.STM
-import Control.Exception (bracket_, finally)
+import Control.Exception hiding (handle)
 import Control.Monad (forM_, forever, join)
 import Data.Int (Int64)
 import Data.Map (Map)
@@ -125,9 +125,27 @@ deleteClient server@Server{..}
 -- | Handle client I/O.
 serveLoop :: Server -> Client -> IO ()
 serveLoop server@Server{..}
-          client@Client{..} = do
+          client@Client{..} =
+    mask $ \restore -> do
+    -- To ensure serveLoop can receive an async exception safely, all of the
+    -- operations that follow need to be uninterruptible, or have an exception
+    -- handler.
+    --
+    -- serveLoop is never sent an async exception, though.  This is just to
+    -- demonstrate how one might handle that situation.
+    --
+    -- newEmptyMVar, forkIO, and try are uninterruptible.  On the other hand,
+    -- killThread is interruptible, and will block until the target thread
+    -- receives the exception.
+
     done <- newEmptyMVar
-    let spawnWorker io = forkIO (io `finally` tryPutMVar done ())
+    let tryException :: IO a -> IO (Either SomeException a)
+        tryException = try
+
+        spawnWorker io = forkIO $ do
+            _ <- tryException (restore io)
+            _ <- tryPutMVar done ()
+            return ()
 
     recv_tid <- spawnWorker $ forever $ do
         msg <- hGetLine clientHandle
@@ -146,8 +164,14 @@ serveLoop server@Server{..}
                             loop
          in loop
 
-    takeMVar done
-    mapM_ killThread [recv_tid, send_tid]
+    _ <- tryException $ takeMVar done
+
+    -- Spawn a separate thread to kill the workers.  This shields killThread
+    -- from async exceptions, and it allows the program to continue if one of
+    -- the worker threads is hung.
+    _ <- forkIO $ mapM_ killThread [recv_tid, send_tid]
+
+    return ()
 
 handleMessage :: Client -> Message -> IO ()
 handleMessage Client{..} message =
