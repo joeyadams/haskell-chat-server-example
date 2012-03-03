@@ -3,10 +3,10 @@
 import Prelude hiding (id)
 
 import Control.Applicative
-import Control.Concurrent (forkIO)
+import Control.Concurrent
 import Control.Concurrent.STM
-import Control.Exception (bracket, finally)
-import Control.Monad (forM_, forever)
+import Control.Exception (bracket_, finally)
+import Control.Monad (forM_)
 import Data.Int (Int64)
 import Data.Map (Map)
 import Network
@@ -53,7 +53,7 @@ instance Eq Client where
         = a == b
 
 initClient :: ClientId -> ClientName -> Handle -> IO Client
-initClient id name handle  =
+initClient id name handle =
     Client <$> return id
            <*> return name
            <*> return handle
@@ -82,41 +82,55 @@ serve server@Server{..} id handle = do
     name <- hGetLine handle
     if null name
         then hPutStrLn handle "Bye, anonymous coward"
-        else bracket (insertClient server id name handle)
-                     (deleteClient server)
-                     (serveLoop server)
+        else do
+            client <- initClient id name handle
+            bracket_ (atomically $ insertClient server client)
+                     (atomically $ deleteClient server client)
+                     (serveLoop server client)
 
 -- | Register the client with the server.  If another client with the same name
 -- is connected already, kick it.
-insertClient :: Server -> ClientId -> ClientName -> Handle -> IO Client
-insertClient server@Server{..} id name handle = do
-    client <- initClient id name handle
+insertClient :: Server -> Client -> STM ()
+insertClient server@Server{..}
+             client@Client{..} = do
+    modifyTVar' serverClients $ Map.insert clientId client
+    m <- readTVar serverClientsByName
+    writeTVar serverClientsByName $! Map.insert clientName client m
+    case Map.lookup clientName m of
+        Nothing ->
+            broadcast server $ Notice $
+                clientName ++ " has connected"
+        Just victim -> do
+            broadcast server $ Notice $
+                clientName ++ " has connected (kicking previous client)"
+            kickClient victim $
+                "Another client by the name of " ++ clientName ++ " has connected"
 
-    atomically $ do
-        modifyTVar' serverClients $ Map.insert id client
+-- | Unregister the client.
+deleteClient :: Server -> Client -> STM ()
+deleteClient server@Server{..}
+             client@Client{..} = do
+    modifyTVar' serverClients $ Map.delete clientId
+    m <- readTVar serverClientsByName
+    case Map.lookup clientName m of
+        Nothing ->
+            -- I got kicked already.  Do nothing.
+            return ()
+        Just c ->
+            -- Make sure the client in the map is actually me,
+            -- and not another client who took my name.
+            if c == client
+                then do
+                    broadcast server $ Notice $ clientName ++ " has disconnected"
+                    writeTVar serverClientsByName $! Map.delete clientName m
+                else return ()
 
-        m <- readTVar serverClientsByName
-        writeTVar serverClientsByName $! Map.insert name client m
-        case Map.lookup name m of
-            Nothing ->
-                broadcast server $ Notice $
-                    name ++ " has connected"
-            Just victim -> do
-                broadcast server $ Notice $
-                    name ++ " has connected (kicking previous client)"
-                kickClient client $
-                    "Another client by the name of " ++ name ++ " has connected"
-
-    return client
-
-deleteClient :: Server -> Client -> IO ()
-deleteClient Server{..} Client{..} =
-    atomically $ do
-        modifyTVar' serverClients $ Map.delete clientId
-
+-- | Handle client I/O.
 serveLoop :: Server -> Client -> IO ()
 serveLoop server@Server{..}
-          client@Client{..} = undefined
+          client@Client{..} = do
+    done <- newEmptyMVar
+    undefined
 
 main :: IO ()
 main = do

@@ -17,7 +17,12 @@ cabal-version:       >=1.8
 executable chat-server
     main-is: Main.hs
 
-    build-depends: base == 4.*
+    ghc-options: -Wall
+
+    other-extensions: CPP
+                    , RecordWildCards
+
+    build-depends: base >= 4.3 && < 5
                  , containers
                  , network
                  , stm
