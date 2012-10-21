@@ -35,10 +35,9 @@ executable chat-server-example
 
     ghc-options: -Wall
 
-    other-extensions: CPP
-                    , RecordWildCards
+    other-extensions: RecordWildCards
 
     build-depends: base >= 4.3 && < 5
                  , containers
                  , network
-                 , stm
+                 , stm >= 2.3

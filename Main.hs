@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, RecordWildCards #-}
+{-# LANGUAGE RecordWildCards #-}
 
 import Prelude hiding (id)
 
@@ -14,15 +14,6 @@ import System.IO
 
 import qualified Data.Foldable  as F
 import qualified Data.Map       as Map
-
--- STM 2.3 introduced this function.  However, it was released less than a week
--- ago, so most people probably don't have it yet.
-#if !MIN_VERSION_stm(2,3,0)
-modifyTVar' :: TVar a -> (a -> a) -> STM ()
-modifyTVar' var f = do
-    x <- readTVar var
-    writeTVar var $! f x
-#endif
 
 type ClientId   = Int64
 type ClientName = String
