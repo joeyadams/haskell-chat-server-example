@@ -21,25 +21,23 @@ type ClientName = String
 data Message = Notice String
              | MessageFrom ClientName String
 
-data Server
-    = Server
-        { serverClients         :: TVar (Map ClientId Client)
-        , serverClientsByName   :: TVar (Map ClientName Client)
-        }
+data Server = Server
+    { serverClients         :: TVar (Map ClientId Client)
+    , serverClientsByName   :: TVar (Map ClientName Client)
+    }
 
 initServer :: IO Server
 initServer =
     Server <$> newTVarIO Map.empty
            <*> newTVarIO Map.empty
 
-data Client
-    = Client
-        { clientId       :: ClientId
-        , clientName     :: ClientName
-        , clientHandle   :: Handle
-        , clientSendChan :: TChan Message
-        , clientKicked   :: TVar (Maybe String)
-        }
+data Client = Client
+    { clientId       :: ClientId
+    , clientName     :: ClientName
+    , clientHandle   :: Handle
+    , clientSendChan :: TChan Message
+    , clientKicked   :: TVar (Maybe String)
+    }
 
 instance Eq Client where
     a == b = clientId a == clientId b
